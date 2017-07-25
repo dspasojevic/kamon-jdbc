@@ -15,33 +15,25 @@
 
 package kamon.jdbc
 
-import kamon.util.ConfigTools.Syntax
-import akka.actor._
 import kamon.Kamon
-import kamon.jdbc.metric.StatementMetrics
-import kamon.util.logger.LazyLogger
 
 object JdbcExtension {
-  val log = LazyLogger("kamon.jdbc.JdbcExtension")
 
   val SegmentLibraryName = "jdbc"
 
   private val config = Kamon.config.getConfig("kamon.jdbc")
-  private val dynamic = new ReflectiveDynamicAccess(getClass.getClassLoader)
 
   private val nameGeneratorFQN = config.getString("name-generator")
-  private val nameGenerator: JdbcNameGenerator = dynamic.createInstanceFor[JdbcNameGenerator](nameGeneratorFQN, Nil).get
+  private val nameGenerator: JdbcNameGenerator = new DefaultJdbcNameGenerator
 
   private val slowQueryProcessorClass = config.getString("slow-query-processor")
-  private val slowQueryProcessor: SlowQueryProcessor = dynamic.createInstanceFor[SlowQueryProcessor](slowQueryProcessorClass, Nil).get
+  private val slowQueryProcessor: SlowQueryProcessor = new DefaultSlowQueryProcessor
 
   private val sqlErrorProcessorClass = config.getString("sql-error-processor")
-  private val sqlErrorProcessor: SqlErrorProcessor = dynamic.createInstanceFor[SqlErrorProcessor](sqlErrorProcessorClass, Nil).get
+  private val sqlErrorProcessor: SqlErrorProcessor = new DefaultSqlErrorProcessor
 
-  val slowQueryThreshold = config.getFiniteDuration("slow-query-threshold").toMillis
+  val slowQueryThreshold = config.getDuration("slow-query-threshold").toMillis
   val shouldGenerateSegments = config.getBoolean("generate-segments")
-
-  val defaultTracker = Kamon.metrics.entity(StatementMetrics, "non-pooled")
 
   def processSlowQuery(sql: String, executionTime: Long) =
     slowQueryProcessor.process(sql, executionTime, slowQueryThreshold)
@@ -70,17 +62,17 @@ class DefaultJdbcNameGenerator extends JdbcNameGenerator {
 }
 
 class DefaultSqlErrorProcessor extends SqlErrorProcessor {
-  val log = LazyLogger(classOf[DefaultSqlErrorProcessor])
 
   override def process(sql: String, cause: Throwable): Unit = {
-    log.error(s"the query [$sql] failed with exception [${cause.getMessage}]")
+    // FIXME
+    println(s"the query [$sql] failed with exception [${cause.getMessage}]")
   }
 }
 
 class DefaultSlowQueryProcessor extends SlowQueryProcessor {
-  val log = LazyLogger(classOf[DefaultSlowQueryProcessor])
 
   override def process(sql: String, executionTimeInMillis: Long, queryThresholdInMillis: Long): Unit = {
-    log.warn(s"The query [$sql] took $executionTimeInMillis ms and the slow query threshold is $queryThresholdInMillis ms")
+    // FIXME
+    println(s"The query [$sql] took $executionTimeInMillis ms and the slow query threshold is $queryThresholdInMillis ms")
   }
 }

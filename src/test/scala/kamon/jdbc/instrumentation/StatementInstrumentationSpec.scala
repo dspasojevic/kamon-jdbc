@@ -18,16 +18,12 @@ package kamon.jdbc.instrumentation
 import java.sql.DriverManager
 import java.util.concurrent.Executors
 
-import kamon.Kamon
-import kamon.jdbc.{JdbcExtension, SlowQueryProcessor, SqlErrorProcessor}
-import kamon.metric.EntitySnapshot
-import kamon.trace.{SegmentCategory, Tracer}
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
+import kamon.jdbc.{SlowQueryProcessor, SqlErrorProcessor}
 import org.scalatest.concurrent.Eventually
 import org.scalatest.time.SpanSugar
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.Try
 
 class StatementInstrumentationSpec extends WordSpec with Matchers with Eventually with SpanSugar with BeforeAndAfterAll {
   val connection = DriverManager.getConnection("jdbc:h2:mem:jdbc-spec;MULTI_THREADED=1", "SA", "")
@@ -41,12 +37,11 @@ class StatementInstrumentationSpec extends WordSpec with Matchers with Eventuall
     connection
       .prepareStatement("CREATE ALIAS SLEEP FOR \"java.lang.Thread.sleep(long)\"")
       .executeUpdate()
-
-    takeSnapshotOf("non-pooled", "jdbc-statement")
   }
 
   "the StatementInstrumentation" should {
     "track in-flight operations" in {
+      Thread.sleep(10000)
       val operations = for (id ← 1 to 10) yield {
         Future {
           DriverManager
@@ -57,126 +52,9 @@ class StatementInstrumentationSpec extends WordSpec with Matchers with Eventuall
       }
 
       Await.result(Future.sequence(operations), 2 seconds)
-      takeSnapshotOf("non-pooled", "jdbc-statement").minMaxCounter("in-flight").get.max should be(10)
-    }
-
-    "track calls to .execute(..) in statements" in {
-      for (id ← 1 to 100) {
-        val select = s"SELECT * FROM Address where Nr = $id"
-        connection.prepareStatement(select).execute()
-        connection.createStatement().execute(select)
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.histogram("generic-execute").get.numberOfMeasurements should be(200)
-      jdbcSnapshot.histogram("queries").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("updates").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("batches").get.numberOfMeasurements should be(0)
-    }
-
-    "track calls to .executeQuery(..) in statements" in {
-      for (id ← 1 to 100) {
-        val select = s"SELECT * FROM Address where Nr = $id"
-        connection.prepareStatement(select).executeQuery()
-        connection.createStatement().executeQuery(select)
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.histogram("queries").get.numberOfMeasurements should be(200)
-      jdbcSnapshot.histogram("updates").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("batches").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("generic-execute").get.numberOfMeasurements should be(0)
-    }
-
-    "track calls to .executeUpdate(..) in statements" in {
-      for (id ← 1 to 100) {
-        val insert = s"INSERT INTO Address (Nr, Name) VALUES($id, 'foo')"
-        connection.prepareStatement(insert).executeUpdate()
-        connection.createStatement().executeUpdate(insert)
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.histogram("updates").get.numberOfMeasurements should be(200)
-      jdbcSnapshot.histogram("queries").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("batches").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("generic-execute").get.numberOfMeasurements should be(0)
-    }
-
-    "track calls to .executeBatch() in statements" in {
-      for (id ← 1 to 100) {
-        val statement = connection.prepareStatement("INSERT INTO Address (Nr, Name) VALUES(?, 'foo')")
-        statement.setInt(1, id)
-        statement.addBatch()
-
-        statement.setInt(1, id)
-        statement.addBatch()
-        statement.executeBatch()
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.histogram("batches").get.numberOfMeasurements should be(100)
-      jdbcSnapshot.histogram("updates").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("queries").get.numberOfMeasurements should be(0)
-      jdbcSnapshot.histogram("generic-execute").get.numberOfMeasurements should be(0)
-    }
-
-    "track errors when executing statements" in {
-      for (id ← 1 to 100) {
-        val insert = s"INSERT INTO NotATable (Nr, Name) VALUES($id, 'foo')"
-        val select = s"SELECT * FROM NotATable where Nr = $id"
-
-        Try(connection.createStatement().execute(select))
-        Try(connection.createStatement().executeQuery(select))
-        Try(connection.createStatement().executeUpdate(insert))
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.counter("errors").get.count should be(300)
-    }
-
-    "record the execution time of SLOW QUERIES based on the kamon.jdbc.slow-query-threshold setting" in {
-      takeSnapshotOf("non-pooled", "jdbc-statement")
-
-      for (id ← 1 to 2) {
-        val select = s"SELECT * FROM Address; CALL SLEEP(500)"
-        connection.createStatement().execute(select)
-      }
-
-      val jdbcSnapshot = takeSnapshotOf("non-pooled", "jdbc-statement")
-      jdbcSnapshot.counter("slows-statements").get.count should be(2)
-    }
-
-    "generate segments when DB access is made within a Trace" in {
-      Tracer.withNewContext("jdbc-trace-with-segments") {
-        for (id ← 1 to 100) {
-          val insert = s"INSERT INTO Address (Nr, Name) VALUES($id, 'foo')"
-          val select = s"SELECT * FROM Address where Nr = $id"
-
-          connection.createStatement().execute(select)
-          connection.createStatement().executeQuery(select)
-          connection.createStatement().executeUpdate(insert)
-          connection.prepareStatement(insert).executeBatch()
-        }
-
-        Tracer.currentContext.finish()
-      }
-
-      Seq("query", "update", "batch", "generic-execute").foreach { segmentType ⇒
-        val segmentSnapshot = takeSnapshotOf("jdbc-" + segmentType, "trace-segment",
-          tags = Map(
-            "trace" -> "jdbc-trace-with-segments",
-            "category" -> SegmentCategory.Database,
-            "library" -> JdbcExtension.SegmentLibraryName))
-
-        segmentSnapshot.histogram("elapsed-time").get.numberOfMeasurements should be(100)
-      }
     }
   }
 
-  def takeSnapshotOf(name: String, category: String, tags: Map[String, String] = Map.empty): EntitySnapshot = {
-    val recorder = Kamon.metrics.find(name, category, tags).get
-    recorder.collect(Kamon.metrics.buildDefaultCollectionContext)
-  }
 }
 
 class NoOpSlowQueryProcessor extends SlowQueryProcessor {

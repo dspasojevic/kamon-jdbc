@@ -17,7 +17,10 @@
 package kamon.jdbc.mixin
 
 import kamon.Kamon
+import kamon.agent.api.instrumentation.Initializer
 import kamon.metric.{Counter, Histogram, MinMaxCounter}
+
+import scala.beans.BeanProperty
 
 trait StatementAware {
   def inFlightStatements: MinMaxCounter
@@ -27,16 +30,23 @@ trait StatementAware {
   def genericExecute: Histogram
   def slowStatements: Counter
   def errors: Counter
-  def sql: Option[String]
+  def setSql(sql: Option[String]): Unit
+  def getSql: Option[String]
 }
 
 class StatementMixin extends StatementAware {
-  def inFlightStatements: MinMaxCounter = Kamon.minMaxCounter("in-flight-statements")
+  def inFlightStatements: MinMaxCounter =
+    Kamon.minMaxCounter("in-flight-statements")
   def queries: Histogram = Kamon.histogram("queries")
   def updates: Histogram = Kamon.histogram("updates")
   def batches: Histogram = Kamon.histogram("batches")
   def genericExecute: Histogram = Kamon.histogram("generic")
   def slowStatements: Counter = Kamon.counter("slow")
   def errors: Counter = Kamon.counter("errors")
-  var sql: Option[String] = None
+
+  @BeanProperty
+  @volatile var sql: Option[String] = _
+
+  @Initializer
+  def _init(): Unit = sql = None
 }

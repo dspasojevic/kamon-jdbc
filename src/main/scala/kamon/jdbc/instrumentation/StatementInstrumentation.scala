@@ -50,9 +50,9 @@ object StatementAdvisor {
 
     println(statementMixin)
     println(statementMixin.getClass)
-    println(statementMixin.sql)
+    println(statementMixin.getSql)
 
-    val sql = if (args.length > 0) Option(args(0)).map(_.toString) else Option(statementMixin.sql).flatten
+    val sql = if (args.length > 0) Option(args(0)).map(_.toString) else Option(statementMixin.getSql).flatten
 
     val statementType = method.getName match {
       case "executeUpdate" => StatementTypes.Update

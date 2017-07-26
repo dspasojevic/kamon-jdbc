@@ -15,9 +15,9 @@
  */
 
 
-val kamonCore = "io.kamon" %% "kamon-core" % "1.0.0-RC1-450978b92bc968bfdb9c6470028ad30586433609"
-val kamonAgent = "io.kamon" % "kamon-agent" % "0.0.5-SNAPSHOT"
-val kamonAgentScalaExtensions = "io.kamon" %% "agent-scala-extension" % "0.0.5-1958130e3228e35d744a44b6e7eae86b46a1b99b"
+//val kamonCore = "io.kamon" %% "kamon-core" % "1.0.0-RC1-450978b92bc968bfdb9c6470028ad30586433609"
+//val kamonAgent = "io.kamon" % "kamon-agent" % "0.0.5-SNAPSHOT"
+val kamonAgentScalaExtensions = "io.kamon" %% "agent-scala-extension" % "0.0.3-experimental"
 val kamonJaeger = "io.kamon" %% "kamon-jaeger" % "1.0.0-RC1-9eec74a0c7f4332336928431852104cc9ad19373"
 val h2 = "com.h2database" % "h2" % "1.4.182"
 val hikariCP = "com.zaxxer" % "HikariCP" % "2.6.0"
@@ -30,8 +30,8 @@ lazy val root = (project in file("."))
   .settings(
     resolvers += Resolver.mavenLocal,
     resolvers += "scalaz-bintray" at "https://dl.bintray.com/kamon-io/snapshots/",
-    javaAgents += "io.kamon" % "kamon-agent" % "0.0.5-SNAPSHOT" % "runtime",
+    javaAgents += "io.kamon" % "kamon-agent" % "0.0.3-experimental" % "compile;test",
     libraryDependencies ++=
-      compileScope(kamonCore, kamonAgent, kamonAgentScalaExtensions, h2, kamonJaeger, slf4jApi) ++
+      compileScope(kamonAgentScalaExtensions, h2, kamonJaeger, slf4jApi) ++
         providedScope(aspectJ, hikariCP) ++
         testScope(h2, scalatest, slf4jApi, logbackClassic))

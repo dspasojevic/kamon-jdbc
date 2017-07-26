@@ -25,6 +25,8 @@ class ConnectionInstrumentation extends KamonInstrumentation {
 
   import kamon.agent.libs.net.bytebuddy.matcher.{ElementMatchers => BBMatchers}
 
+  println("Instrumenting connection")
+
   forSubtypeOf("java.sql.Connection") { builder ⇒
     builder
       .withAdvisorFor(BBMatchers.named("prepareStatement"),
@@ -38,12 +40,19 @@ class ConnectionAdvisor
 object ConnectionAdvisor {
 
   @OnMethodExit(onThrowable = classOf[Throwable])
-  def onExit(@Return statement: StatementAware, @Argument(0) sql: String): Unit = {
+  def onExit(@Return statement: AnyRef, @Argument(0) sql: String): Unit = {
     if (statement != null) {
       statement match {
-        case mixin: StatementMixin => mixin.sql = Some(sql)
-        case _ => ()
+        case aware: StatementAware =>
+          println(s"Setting SQL to $sql")
+          aware.setSql(Some(sql))
+        case _ =>
+          println(s"[${statement.getClass}] is not [${statement.isInstanceOf[StatementAware]}] [${statement.getClass.isAssignableFrom(classOf[Statement])}]")
+          ()
       }
+    }
+    else {
+      println(s"statement [$statement] is null")
     }
   }
 
